@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Signal Ghost</title>
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js"></script>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"}}</script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a12; overflow: hidden; font-family: 'Orbitron', sans-serif; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    #game-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; touch-action: none; }
+    #start-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(10, 10, 18, 0.92) 0%, rgba(5, 15, 30, 0.88) 100%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; pointer-events: auto; }
+    #start-screen.hidden { opacity: 0; pointer-events: none; transition: opacity 0.8s ease; }
+    .title { font-size: clamp(2rem, 8vw, 4rem); font-weight: 900; color: #00ff88; text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff8855; letter-spacing: 0.3em; opacity: 0; animation: titleFadeIn 1.5s ease forwards 0.5s; }
+    @keyframes titleFadeIn { from { opacity: 0; letter-spacing: 0.8em; transform: translateY(-20px); } to { opacity: 1; letter-spacing: 0.3em; transform: translateY(0); } }
+    .tagline { font-family: 'Share Tech Mono', monospace; font-size: clamp(0.7rem, 2.5vw, 1rem); color: #4a9eff; margin-top: 20px; opacity: 0; animation: fadeIn 1s ease forwards 1.8s; text-transform: uppercase; letter-spacing: 0.2em; }
+    .instructions { font-family: 'Share Tech Mono', monospace; font-size: clamp(0.6rem, 2vw, 0.85rem); color: #88aacc; margin-top: 40px; text-align: center; max-width: 80%; line-height: 1.8; opacity: 0; animation: fadeIn 1s ease forwards 2.3s; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .start-btn { margin-top: 50px; padding: 15px 50px; font-family: 'Orbitron', sans-serif; font-size: clamp(0.8rem, 3vw, 1.1rem); font-weight: 700; color: #0a0a12; background: #00ff88; border: none; cursor: pointer; letter-spacing: 0.15em; opacity: 0; animation: fadeIn 1s ease forwards 2.8s, pulse 2s ease-in-out infinite 3.8s; transition: transform 0.2s, box-shadow 0.2s; }
+    .start-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px #00ff88; }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 10px #00ff8866; } 50% { box-shadow: 0 0 25px #00ff88aa; } }
+    #ui-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
+    #level-display { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); font-size: clamp(0.7rem, 2.5vw, 1rem); color: #4a9eff; letter-spacing: 0.2em; text-shadow: 0 0 10px #4a9eff55; }
+    #energy-bar-container { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); width: 60%; max-width: 300px; height: 8px; background: rgba(20, 30, 50, 0.8); border: 1px solid #4a9eff44; border-radius: 4px; overflow: hidden; }
+    #energy-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #00ff88, #4affaa); box-shadow: 0 0 10px #00ff88; transition: width 0.3s ease, background 0.3s ease; }
+    #energy-bar.low { background: linear-gradient(90deg, #ff4444, #ff6666); box-shadow: 0 0 10px #ff4444; animation: energyPulse 0.5s ease-in-out infinite; }
+    @keyframes energyPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    #instruction { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); font-family: 'Share Tech Mono', monospace; font-size: clamp(0.6rem, 2vw, 0.8rem); color: #88aacc; text-align: center; opacity: 0; transition: opacity 0.5s; }
+    #instruction.visible { opacity: 1; }
+    #game-over-screen, #level-complete-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 18, 0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.5s; }
+    #game-over-screen.visible, #level-complete-screen.visible { opacity: 1; pointer-events: auto; }
+    .screen-title { font-size: clamp(1.5rem, 6vw, 3rem); font-weight: 900; letter-spacing: 0.2em; }
+    #game-over-screen .screen-title { color: #ff4444; text-shadow: 0 0 20px #ff4444; }
+    #level-complete-screen .screen-title { color: #00ff88; text-shadow: 0 0 20px #00ff88; }
+    .screen-subtitle { font-family: 'Share Tech Mono', monospace; font-size: clamp(0.7rem, 2.5vw, 1rem); color: #88aacc; margin-top: 20px; }
+    .retry-btn, .next-btn, .menu-btn { margin-top: 40px; padding: 12px 40px; font-family: 'Orbitron', sans-serif; font-size: clamp(0.7rem, 2.5vw, 1rem); font-weight: 700; border: none; cursor: pointer; letter-spacing: 0.1em; transition: transform 0.2s, box-shadow 0.2s; }
+    .retry-btn { color: #0a0a12; background: #ff6644; }
+    .next-btn { color: #0a0a12; background: #00ff88; }
+    .menu-btn { color: #4a9eff; background: transparent; border: 1px solid #4a9eff; margin-left: 15px; }
+    .retry-btn:hover, .next-btn:hover, .menu-btn:hover { transform: scale(1.05); }
+    .floating-text { position: fixed; font-family: 'Orbitron', sans-serif; font-weight: 700; pointer-events: none; z-index: 60; animation: floatUp 1s ease-out forwards; }
+    @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-60px) scale(0.8); } }
+    #vignette { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 40; opacity: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(255, 0, 0, 0.4) 100%); transition: opacity 0.3s; }
+    #vignette.active { opacity: 1; }
+    .github-link { position: fixed; bottom: 15px; right: 15px; font-family: 'Share Tech Mono', monospace; font-size: 0.7rem; color: rgba(255, 255, 255, 0.4); text-decoration: none; z-index: 1000; letter-spacing: 0.05em; }
+    .github-link:hover { color: rgba(255, 255, 255, 0.7); }
+    #win-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(ellipse at center, rgba(0, 255, 136, 0.2) 0%, rgba(10, 10, 18, 0.98) 70%); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 300; opacity: 0; pointer-events: none; transition: opacity 0.8s; }
+    #win-screen.visible { opacity: 1; pointer-events: auto; }
+    #win-screen .screen-title { font-size: clamp(1.8rem, 7vw, 3.5rem); animation: winPulse 1.5s ease-in-out infinite; }
+    @keyframes winPulse { 0%, 100% { text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff8855; transform: scale(1); } 50% { text-shadow: 0 0 40px #00ff88, 0 0 80px #00ff88aa; transform: scale(1.05); } }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <div id="start-screen">
+    <h1 class="title">SIGNAL GHOST</h1>
+    <p class="tagline">A dying signal searching for home</p>
+    <p class="instructions">Tap relay towers to redirect your signal pulse.<br>Reach the receiver before your energy fades.<br>Avoid red interference zones.</p>
+    <button class="start-btn" id="start-btn">INITIALIZE</button>
+  </div>
+  <div id="ui-layer">
+    <div id="level-display">LEVEL 1 / 5</div>
+    <div id="energy-bar-container"><div id="energy-bar"></div></div>
+    <div id="instruction">TAP A TOWER TO ACTIVATE</div>
+  </div>
+  <div id="vignette"></div>
+  <div id="game-over-screen">
+    <h2 class="screen-title">SIGNAL LOST</h2>
+    <p class="screen-subtitle">Your signal faded into the static...</p>
+    <button class="retry-btn" id="retry-btn">RETRY</button>
+    <button class="menu-btn" id="menu-btn-1">MENU</button>
+  </div>
+  <div id="level-complete-screen">
+    <h2 class="screen-title">SIGNAL RECEIVED</h2>
+    <p class="screen-subtitle" id="level-complete-text">Signal transmitted successfully</p>
+    <button class="next-btn" id="next-btn">NEXT SECTOR</button>
+    <button class="menu-btn" id="menu-btn-2">MENU</button>
+  </div>
+  <div id="win-screen">
+    <h2 class="screen-title">TRANSMISSION COMPLETE</h2>
+    <p class="screen-subtitle">The ghost has found its home</p>
+    <button class="menu-btn" id="menu-btn-3" style="margin-top: 50px; padding: 12px 40px; color: #00ff88; background: transparent; border: 1px solid #00ff88;">PLAY AGAIN</button>
+  </div>
+  <a href="https://github.com/nishivector/signal-ghost" class="github-link" target="_blank">GitHub</a>
+
+  <script type="module">
+import * as THREE from 'three';
+
+const state = {
+  currentLevel: 1, maxLevels: 5, energy: 100, maxEnergy: 100,
+  gameStarted: false, levelComplete: false, gameOver: false,
+  signalMoving: false, currentHop: 0, totalHops: 0,
+  path: [], towers: [], interferenceZones: [],
+  sourceTower: null, receiverTower: null, signalPulse: null, signalTrail: []
+};
+
+const levelConfigs = [
+  { hops: 3, gridSize: 5, interference: 0 },
+  { hops: 5, gridSize: 6, interference: 1 },
+  { hops: 7, gridSize: 7, interference: 2 },
+  { hops: 9, gridSize: 8, interference: 3 },
+  { hops: 12, gridSize: 9, interference: 4 }
+];
+
+let audioInitialized = false, bgmSynth, bgmLoop, reverb;
+
+async function initAudio() {
+  if (audioInitialized) return;
+  try { await Tone.start(); reverb = new Tone.Reverb({ decay: 2, wet: 0.3 }).toDestination(); audioInitialized = true; } catch (e) { console.log('Audio init failed:', e); }
+}
+
+function playTapSound() {
+  if (!audioInitialized) return;
+  try { const synth = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination(); synth.volume.value = -28; synth.triggerAttackRelease('880', '32n'); } catch (e) {}
+}
+
+function playSuccessSound() {
+  if (!audioInitialized) return;
+  try { const synth = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.02, decay: 0.2, sustain: 0.1, release: 0.3 } }).toDestination(); synth.volume.value = -24; synth.triggerAttackRelease('1760', '16n'); setTimeout(() => synth.triggerAttackRelease('2200', '16n'), 80); } catch (e) {}
+}
+
+function playLevelCompleteSound() {
+  if (!audioInitialized) return;
+  try { const synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.02, decay: 0.4, sustain: 0.2, release: 0.5 } }).toDestination(); synth.volume.value = -20; synth.triggerAttackRelease(['C5', 'E5', 'G5', 'C6'], '8n'); } catch (e) {}
+}
+
+function playGameOverSound() {
+  if (!audioInitialized) return;
+  try { const synth = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 4, oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.4, sustain: 0, release: 0.4 } }).toDestination(); synth.volume.value = -22; synth.triggerAttackRelease('C2', '4n'); } catch (e) {}
+}
+
+function playWarningSound() {
+  if (!audioInitialized) return;
+  try { const synth = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.05, sustain: 0, release: 0.05 } }).toDestination(); synth.volume.value = -30; synth.triggerAttackRelease('440', '32n'); } catch (e) {}
+}
+
+function startMusic() {
+  if (!audioInitialized) return;
+  try {
+    if (bgmSynth) bgmSynth.dispose();
+    bgmSynth = new Tone.Synth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.5, decay: 0.5, sustain: 0.8, release: 1 } }).connect(reverb);
+    bgmSynth.volume.value = -18;
+    const sequence = ['C2', null, 'C2', null, 'G1', null, 'C2', null];
+    let index = 0;
+    bgmLoop = setInterval(() => {
+      if (bgmSynth && state.gameStarted && !state.gameOver && !state.levelComplete) {
+        const note = sequence[index % sequence.length];
+        if (note) bgmSynth.triggerAttackRelease(note, '8n');
+        index++;
+      }
+    }, 500);
+  } catch (e) {}
+}
+
+function stopMusic() {
+  if (bgmLoop) { clearInterval(bgmLoop); bgmLoop = null; }
+  if (bgmSynth) { bgmSynth.dispose(); bgmSynth = null; }
+}
+
+const canvas = document.getElementById('game-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050510);
+scene.fog = new THREE.FogExp2(0x050515, 0.015);
+
+const frustumSize = 20;
+let aspect = window.innerWidth / window.innerHeight;
+const camera = new THREE.OrthographicCamera(-frustumSize * aspect / 2, frustumSize * aspect / 2, frustumSize / 2, -frustumSize / 2, 0.1, 1000);
+camera.position.z = 50;
+
+const ambientLight = new THREE.AmbientLight(0x1a1a2e, 0.5);
+scene.add(ambientLight);
+const pointLight = new THREE.PointLight(0x4a9eff, 1, 50);
+pointLight.position.set(0, 0, 20);
+scene.add(pointLight);
+
+const bgParticlesGeometry = new THREE.BufferGeometry();
+const bgParticleCount = 200;
+const bgPositions = new Float32Array(bgParticleCount * 3);
+for (let i = 0; i < bgParticleCount; i++) {
+  bgPositions[i * 3] = (Math.random() - 0.5) * 60;
+  bgPositions[i * 3 + 1] = (Math.random() - 0.5) * 60;
+  bgPositions[i * 3 + 2] = (Math.random() - 0.5) * 20 - 10;
+}
+bgParticlesGeometry.setAttribute('position', new THREE.BufferAttribute(bgPositions, 3));
+const bgParticlesMaterial = new THREE.PointsMaterial({ color: 0x4a9eff, size: 0.1, transparent: true, opacity: 0.4 });
+const bgParticles = new THREE.Points(bgParticlesGeometry, bgParticlesMaterial);
+scene.add(bgParticles);
+
+const gameGroup = new THREE.Group();
+scene.add(gameGroup);
+const towerGroup = new THREE.Group();
+gameGroup.add(towerGroup);
+const interferenceGroup = new THREE.Group();
+gameGroup.add(interferenceGroup);
+
+const pulseGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+const pulseMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
+state.signalPulse = new THREE.Mesh(pulseGeometry, pulseMaterial);
+state.signalPulse.visible = false;
+scene.add(state.signalPulse);
+const glowGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+const glowMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.3 });
+const pulseGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+state.signalPulse.add(pulseGlow);
+
+const trailParticles = [];
+function createTrailParticle(position) {
+  const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+  const material = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.6 });
+  const particle = new THREE.Mesh(geometry, material);
+  particle.position.copy(position);
+  particle.userData.life = 1;
+  scene.add(particle);
+  trailParticles.push(particle);
+  return particle;
+}
+
+function updateTrailParticles(delta) {
+  for (let i = trailParticles.length - 1; i >= 0; i--) {
+    const p = trailParticles[i];
+    p.userData.life -= delta * 2;
+    p.material.opacity = p.userData.life * 0.6;
+    p.scale.setScalar(p.userData.life);
+    if (p.userData.life <= 0) { scene.remove(p); p.geometry.dispose(); p.material.dispose(); trailParticles.splice(i, 1); }
+  }
+}
+
+function createTower(x, y, type) {
+  const group = new THREE.Group();
+  group.position.set(x, y, 0);
+  let color, emissive;
+  if (type === 'source') { color = 0x00ff88; emissive = 0x00ff88; }
+  else if (type === 'receiver') { color = 0x4a9eff; emissive = 0x4a9eff; }
+  else { color = 0x668899; emissive = 0x334455; }
+  
+  const baseGeometry = new THREE.CylinderGeometry(0.4, 0.5, 0.3, 8);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, emissive: emissive, emissiveIntensity: 0.3, metalness: 0.8, roughness: 0.3 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.rotation.x = Math.PI / 2;
+  group.add(base);
+  
+  const antennaGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6);
+  const antennaMaterial = new THREE.MeshStandardMaterial({ color: color, emissive: emissive, emissiveIntensity: 0.5, metalness: 0.9, roughness: 0.2 });
+  const antenna = new THREE.Mesh(antennaGeometry, antennaMaterial);
+  antenna.position.z = 0.6;
+  group.add(antenna);
+  
+  const ringGeometry = new THREE.RingGeometry(0.5, 0.7, 16);
+  const ringMaterial = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+  ring.position.z = 0.1;
+  group.add(ring);
+  
+  group.userData = { type, active: false, ring, antenna, base, phase: Math.random() * Math.PI * 2 };
+  return group;
+}
+
+function createInterferenceZone(x, y) {
+  const group = new THREE.Group();
+  group.position.set(x, y, 0);
+  const cloudGeometry = new THREE.CircleGeometry(1.2, 16);
+  const cloudMaterial = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.15 });
+  const cloud = new THREE.Mesh(cloudGeometry, cloudMaterial);
+  group.add(cloud);
+  const innerGeometry = new THREE.CircleGeometry(0.7, 16);
+  const innerMaterial = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.2 });
+  const inner = new THREE.Mesh(innerGeometry, innerMaterial);
+  group.add(inner);
+  for (let i = 0; i < 8; i++) {
+    const particleGeometry = new THREE.PlaneGeometry(0.15, 0.15);
+    const particleMaterial = new THREE.MeshBasicMaterial({ color: 0xff6666, transparent: true, opacity: 0.5 });
+    const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 0.4 + Math.random() * 0.5;
+    particle.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0.1);
+    particle.userData.phase = Math.random() * Math.PI * 2;
+    group.add(particle);
+  }
+  group.userData = { cloud, inner };
+  return group;
+}
+
+function generateLevel(levelNum) {
+  while (towerGroup.children.length > 0) {
+    const child = towerGroup.children[0];
+    towerGroup.remove(child);
+    child.traverse(obj => { if (obj.geometry) obj.geometry.dispose(); if (obj.material) obj.material.dispose(); });
+  }
+  while (interferenceGroup.children.length > 0) {
+    const child = interferenceGroup.children[0];
+    interferenceGroup.remove(child);
+    child.traverse(obj => { if (obj.geometry) obj.geometry.dispose(); if (obj.material) obj.material.dispose(); });
+  }
+  
+  const config = levelConfigs[levelNum - 1];
+  const gridSize = config.gridSize;
+  const spacing = 3;
+  const offset = (gridSize - 1) * spacing / 2;
+  
+  const positions = [];
+  for (let i = 0; i < gridSize; i++) {
+    for (let j = 0; j < gridSize; j++) {
+      positions.push({ x: j * spacing - offset, y: i * spacing - offset, gridX: j, gridY: i });
+    }
+  }
+  
+  const shuffled = [...positions].sort(() => Math.random() - 0.5);
+  const sourcePos = { x: -offset - 1, y: offset + 1 };
+  const receiverPos = { x: offset + 1, y: -offset - 1 };
+  
+  state.sourceTower = createTower(sourcePos.x, sourcePos.y, 'source');
+  state.receiverTower = createTower(receiverPos.x, receiverPos.y, 'receiver');
+  towerGroup.add(state.sourceTower);
+  towerGroup.add(state.receiverTower);
+  
+  state.towers = [state.sourceTower];
+  const hops = config.hops;
+  const pathPoints = [];
+  for (let i = 0; i <= hops; i++) {
+    const t = i / hops;
+    pathPoints.push({
+      x: sourcePos.x + (receiverPos.x - sourcePos.x) * t + (Math.random() - 0.5) * spacing * 1.5,
+      y: sourcePos.y + (receiverPos.y - sourcePos.y) * t + (Math.random() - 0.5) * spacing * 1.5
+    });
+  }
+  
+  const usedPositions = [sourcePos, receiverPos];
+  for (let i = 1; i < pathPoints.length - 1; i++) {
+    const point = pathPoints[i];
+    let bestPos = null, bestDist = Infinity;
+    for (const pos of shuffled) {
+      if (usedPositions.some(p => Math.abs(p.x - pos.x) < 1 && Math.abs(p.y - pos.y) < 1)) continue;
+      const dist = Math.hypot(pos.x - point.x, pos.y - point.y);
+      if (dist < bestDist) { bestDist = dist; bestPos = pos; }
+    }
+    if (bestPos) {
+      const tower = createTower(bestPos.x, bestPos.y, 'relay');
+      towerGroup.add(tower);
+      state.towers.push(tower);
+      usedPositions.push(bestPos);
+    }
+  }
+  
+  state.interferenceZones = [];
+  const interferenceCount = config.interference;
+  for (let i = 0; i < interferenceCount; i++) {
+    const idx1 = Math.floor(Math.random() * (state.towers.length - 1));
+    const idx2 = Math.min(idx1 + 1, state.towers.length - 1);
+    const t1 = state.towers[idx1].position;
+    const t2 = state.towers[idx2].position;
+    const x = (t1.x + t2.x) / 2 + (Math.random() - 0.5) * 2;
+    const y = (t1.y + t2.y) / 2 + (Math.random() - 0.5) * 2;
+    const zone = createInterferenceZone(x, y);
+    interferenceGroup.add(zone);
+    state.interferenceZones.push(zone);
+  }
+  
+  state.energy = state.maxEnergy = 100;
+  state.currentHop = 0;
+  state.path = [state.sourceTower];
+  state.signalMoving = false;
+  state.levelComplete = false;
+  state.gameOver = false;
+  
+  state.towers.forEach(t => {
+    t.userData.active = t === state.sourceTower;
+    t.userData.ring.material.opacity = t.userData.active ? 0.8 : 0;
+  });
+  
+  updateUI();
+}
+
+function updateUI() {
+  document.getElementById('level-display').textContent = "LEVEL " + state.currentLevel + " / " + state.maxLevels;
+  const energyBar = document.getElementById('energy-bar');
+  const percent = (state.energy / state.maxEnergy) * 100;
+  energyBar.style.width = percent + '%';
+  if (percent < 30) energyBar.classList.add('low');
+  else energyBar.classList.remove('low');
+  const instruction = document.getElementById('instruction');
+  if (state.gameStarted && !state.signalMoving && !state.levelComplete && !state.gameOver) instruction.classList.add('visible');
+  else instruction.classList.remove('visible');
+}
+
+function showFloatingText(text, x, y, color) {
+  color = color || '#00ff88';
+  const div = document.createElement('div');
+  div.className = 'floating-text';
+  div.textContent = text;
+  div.style.left = x + 'px';
+  div.style.top = y + 'px';
+  div.style.color = color;
+  div.style.fontSize = '1.2rem';
+  document.body.appendChild(div);
+  setTimeout(() => div.remove(), 1000);
+}
+
+function moveSignalTo(targetTower) {
+  if (!targetTower || state.signalMoving) return;
+  state.signalMoving = true;
+  state.path.push(targetTower);
+  
+  const startPos = state.signalPulse.position.clone();
+  const endPos = targetTower.position.clone();
+  const duration = 600;
+  const startTime = Date.now();
+  
+  const trailInterval = setInterval(() => {
+    if (state.signalPulse.visible) createTrailParticle(state.signalPulse.position.clone());
+  }, 50);
+  
+  function animateSignal() {
+    const elapsed = Date.now() - startTime;
+    const t = Math.min(elapsed / duration, 1);
+    const easeT = 1 - Math.pow(1 - t, 3);
+    state.signalPulse.position.lerpVectors(startPos, endPos, easeT);
+    
+    if (t < 1) {
+      requestAnimationFrame(animateSignal);
+    } else {
+      clearInterval(trailInterval);
+      onSignalArrived(targetTower);
+    }
+  }
+  animateSignal();
+}
+
+function onSignalArrived(tower) {
+  state.signalMoving = false;
+  tower.userData.active = true;
+  tower.userData.ring.material.opacity = 0.8;
+  
+  if (tower === state.receiverTower) {
+    onLevelComplete();
+    return;
+  }
+  
+  let hitInterference = false;
+  for (const zone of state.interferenceZones) {
+    const dist = tower.position.distanceTo(zone.position);
+    if (dist < 1.5) { hitInterference = true; break; }
+  }
+  
+  const energyCost = hitInterference ? 25 : 15;
+  state.energy -= energyCost;
+  
+  if (state.energy <= 0) {
+    state.energy = 0;
+    onGameOver();
+    return;
+  }
+  
+  if (hitInterference) {
+    document.getElementById('vignette').classList.add('active');
+    setTimeout(() => document.getElementById('vignette').classList.remove('active'), 500);
+    showFloatingText('-25 INTERFERENCE!', window.innerWidth / 2, window.innerHeight / 2, '#ff4444');
+    playWarningSound();
+  } else {
+    showFloatingText('-15', window.innerWidth / 2, window.innerHeight / 2, '#ffaa00');
+  }
+  
+  updateUI();
+}
+
+function onLevelComplete() {
+  state.levelComplete = true;
+  playLevelCompleteSound();
+  const flash = document.createElement('div');
+  flash.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#00ff88;z-index:250;opacity:0;pointer-events:none;';
+  document.body.appendChild(flash);
+  flash.style.transition = 'opacity 0.3s';
+  flash.style.opacity = '0.6';
+  setTimeout(() => { flash.style.opacity = '0'; setTimeout(() => flash.remove(), 300); }, 100);
+  state.signalPulse.visible = false;
+  
+  if (state.currentLevel >= state.maxLevels) {
+    setTimeout(() => document.getElementById('win-screen').classList.add('visible'), 800);
+  } else {
+    setTimeout(() => document.getElementById('level-complete-screen').classList.add('visible'), 800);
+  }
+}
+
+function onGameOver() {
+  state.gameOver = true;
+  playGameOverSound();
+  document.getElementById('vignette').classList.add('active');
+  setTimeout(() => document.getElementById('vignette').classList.remove('active'), 1000);
+  state.signalPulse.visible = false;
+  setTimeout(() => document.getElementById('game-over-screen').classList.add('visible'), 500);
+}
+
+function startGame() {
+  state.gameStarted = true;
+  document.getElementById('start-screen').classList.add('hidden');
+  generateLevel(state.currentLevel);
+  state.signalPulse.position.copy(state.sourceTower.position);
+  state.signalPulse.visible = true;
+  startMusic();
+  updateUI();
+}
+
+function nextLevel() {
+  document.getElementById('level-complete-screen').classList.remove('visible');
+  state.currentLevel++;
+  generateLevel(state.currentLevel);
+  state.signalPulse.position.copy(state.sourceTower.position);
+  state.signalPulse.visible = true;
+  startMusic();
+  updateUI();
+}
+
+function retryLevel() {
+  document.getElementById('game-over-screen').classList.remove('visible');
+  document.getElementById('vignette').classList.remove('active');
+  generateLevel(state.currentLevel);
+  state.signalPulse.position.copy(state.sourceTower.position);
+  state.signalPulse.visible = true;
+  startMusic();
+  updateUI();
+}
+
+function goToMenu() {
+  stopMusic();
+  document.getElementById('game-over-screen').classList.remove('visible');
+  document.getElementById('level-complete-screen').classList.remove('visible');
+  document.getElementById('win-screen').classList.remove('visible');
+  document.getElementBy
+'tart-screen').classList.remove('hidden');
+  state.gameStarted = false;
+  state.currentLevel = 1;
+  updateUI();
+}
+
+// Event listeners
+document.getElementById('start-btn').addEventListener('click', async () => {
+  await initAudio();
+  startGame();
+});
+
+document.getElementById('retry-btn').addEventListener('click', retryLevel);
+document.getElementById('next-btn').addEventListener('click', nextLevel);
+document.getElementById('menu-btn-1').addEventListener('click', goToMenu);
+document.getElementById('menu-btn-2').addEventListener('click', goToMenu);
+document.getElementById('menu-btn-3').addEventListener('click', () => {
+  document.getElementById('win-screen').classList.remove('visible');
+  state.currentLevel = 1;
+  generateLevel(state.currentLevel);
+  state.signalPulse.position.copy(state.sourceTower.position);
+  state.signalPulse.visible = true;
+  state.gameStarted = true;
+  startMusic();
+  updateUI();
+});
+
+// Pointer events
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+function onPointerDown(event) {
+  if (!state.gameStarted || state.signalMoving || state.levelComplete || state.gameOver) return;
+  
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  
+  raycaster.setFromCamera(pointer, camera);
+  
+  for (const tower of state.towers) {
+    if (tower === state.sourceTower) continue;
+    const dist = raycaster.ray.distanceToPoint(tower.position);
+    if (dist < 0.8) {
+      playTapSound();
+      playSuccessSound();
+      moveSignalTo(tower);
+      break;
+    }
+  }
+}
+
+canvas.addEventListener('pointerdown', onPointerDown);
+
+// Animation loop
+let lastTime = 0;
+function animate(time) {
+  requestAnimationFrame(animate);
+  const delta = (time - lastTime) / 1000;
+  lastTime = time;
+  
+  // Animate background particles
+  const positions = bgParticles.geometry.attributes.position.array;
+  for (let i = 0; i < bgParticleCount; i++) {
+    positions[i * 3 + 1] += delta * 0.5;
+    if (positions[i * 3 + 1] > 30) positions[i * 3 + 1] = -30;
+  }
+  bgParticles.geometry.attributes.position.needsUpdate = true;
+  
+  // Animate towers
+  const timeSec = time * 0.001;
+  towerGroup.children.forEach(tower => {
+    if (tower.userData.antenna) {
+      tower.userData.antenna.position.z = 0.6 + Math.sin(timeSec * 2 + tower.userData.phase) * 0.05;
+    }
+    if (tower.userData.active && tower.userData.ring) {
+      tower.userData.ring.rotation.z += delta * 2;
+      tower.userData.ring.material.opacity = 0.5 + Math.sin(timeSec * 3) * 0.3;
+    }
+  });
+  
+  // Animate interference zones
+  interferenceGroup.children.forEach(zone => {
+    zone.children.forEach((child, idx) => {
+      if (child.userData && child.userData.phase !== undefined) {
+        child.position.x += Math.sin(timeSec * 2 + child.userData.phase) * delta * 0.3;
+        child.position.y += Math.cos(timeSec * 2 + child.userData.phase) * delta * 0.3;
+      }
+    });
+    if (zone.userData.cloud) {
+      zone.userData.cloud.material.opacity = 0.1 + Math.sin(timeSec * 4) * 0.05;
+    }
+  });
+  
+  // Animate signal pulse
+  if (state.signalPulse.visible) {
+    const pulse = state.signalPulse;
+    pulse.scale.setScalar(1 + Math.sin(timeSec * 8) * 0.1);
+    pulseGlow.scale.setScalar(1 + Math.sin(timeSec * 6) * 0.2);
+  }
+  
+  // Update trail particles
+  updateTrailParticles(delta);
+  
+  // Camera subtle drift
+  camera.position.x = Math.sin(timeSec * 0.1) * 0.5;
+  camera.position.y = Math.cos(timeSec * 0.15) * 0.3;
+  
+  renderer.render(scene, camera);
+}
+
+// Handle resize
+window.addEventListener('resize', () => {
+  aspect = window.innerWidth / window.innerHeight;
+  camera.left = -frustumSize * aspect / 2;
+  camera.right = frustumSize * aspect / 2;
+  camera.top = frustumSize / 2;
+  camera.bottom = -frustumSize / 2;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate(0);
+  </script>
+</body>
+</html>
