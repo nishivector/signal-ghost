@@ -401,17 +401,41 @@ function showFloatingText(text, x, y, color) {
   setTimeout(() => div.remove(), 1000);
 }
 
+let signalAnimationId = null;
+let signalTrailInterval = null;
+
 function moveSignalTo(targetTower) {
-  if (!targetTower || state.signalMoving) return;
-  state.signalMoving = true;
-  state.path.push(targetTower);
+  if (!targetTower) return;
   
+  // If already moving, cancel current animation and redirect mid-flight
+  if (state.signalMoving) {
+    // Clear any stale animation state
+    if (signalAnimationId) {
+      cancelAnimationFrame(signalAnimationId);
+      signalAnimationId = null;
+    }
+    if (signalTrailInterval) {
+      clearInterval(signalTrailInterval);
+      signalTrailInterval = null;
+    }
+  }
+  
+  state.signalMoving = true;
+  
+  // Store current pulse world position before resetting - this is key for mid-flight redirects
   const startPos = state.signalPulse.position.clone();
   const endPos = targetTower.position.clone();
+  
+  // Only add to path if not already in path (for mid-flight redirects)
+  const lastInPath = state.path[state.path.length - 1];
+  if (lastInPath !== targetTower) {
+    state.path.push(targetTower);
+  }
+  
   const duration = 600;
   const startTime = Date.now();
   
-  const trailInterval = setInterval(() => {
+  signalTrailInterval = setInterval(() => {
     if (state.signalPulse.visible) createTrailParticle(state.signalPulse.position.clone());
   }, 50);
   
@@ -422,9 +446,11 @@ function moveSignalTo(targetTower) {
     state.signalPulse.position.lerpVectors(startPos, endPos, easeT);
     
     if (t < 1) {
-      requestAnimationFrame(animateSignal);
+      signalAnimationId = requestAnimationFrame(animateSignal);
     } else {
-      clearInterval(trailInterval);
+      clearInterval(signalTrailInterval);
+      signalTrailInterval = null;
+      signalAnimationId = null;
       onSignalArrived(targetTower);
     }
   }
@@ -563,7 +589,7 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
 function onPointerDown(event) {
-  if (!state.gameStarted || state.signalMoving || state.levelComplete || state.gameOver) return;
+  if (!state.gameStarted || state.levelComplete || state.gameOver) return;
   
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -571,15 +597,46 @@ function onPointerDown(event) {
   
   raycaster.setFromCamera(pointer, camera);
   
+  let targetTower = null;
+  let closestDist = Infinity;
+  
+  // First try exact raycaster hit
   for (const tower of state.towers) {
     if (tower === state.sourceTower) continue;
     const dist = raycaster.ray.distanceToPoint(tower.position);
-    if (dist < 0.8) {
-      playTapSound();
-      playSuccessSound();
-      moveSignalTo(tower);
-      break;
+    if (dist < 0.8 && dist < closestDist) {
+      closestDist = dist;
+      targetTower = tower;
     }
+  }
+  
+  // If no hit, try finding closest antenna within screen-distance threshold (50px for mobile)
+  // This fixes the tap hitbox being too small on mobile
+  if (!targetTower) {
+    const screenThreshold = 50; // pixels
+    for (const tower of state.towers) {
+      if (tower === state.sourceTower) continue;
+      
+      // Project tower position to screen coordinates
+      const towerPos = tower.position.clone();
+      towerPos.project(camera);
+      const screenX = (towerPos.x + 1) / 2 * rect.width;
+      const screenY = (-towerPos.y + 1) / 2 * rect.height;
+      
+      // Calculate screen distance
+      const screenDist = Math.hypot(event.clientX - screenX, event.clientY - screenY);
+      
+      if (screenDist < screenThreshold && screenDist < closestDist) {
+        closestDist = screenDist;
+        targetTower = tower;
+      }
+    }
+  }
+  
+  if (targetTower) {
+    playTapSound();
+    playSuccessSound();
+    moveSignalTo(targetTower);
   }
 }
 
@@ -612,16 +669,24 @@ function animate(time) {
     }
   });
   
-  // Animate interference zones
-  interferenceGroup.children.forEach(zone => {
+  // Animate interference zones with pulsing emissive animation
+  state.interferenceZones.forEach((zone, i) => {
     zone.children.forEach((child, idx) => {
       if (child.userData && child.userData.phase !== undefined) {
         child.position.x += Math.sin(timeSec * 2 + child.userData.phase) * delta * 0.3;
         child.position.y += Math.cos(timeSec * 2 + child.userData.phase) * delta * 0.3;
       }
+      // Add pulsing opacity to interference zone materials
+      if (child.material && child.material.transparent) {
+        child.material.opacity = 0.35 + Math.sin(timeSec * 2 + i) * 0.1;
+        // Add emissive intensity for glow effect
+        if (child.material.emissiveIntensity !== undefined) {
+          child.material.emissiveIntensity = 0.3 + Math.sin(timeSec * 3 + i) * 0.15;
+        }
+      }
     });
     if (zone.userData.cloud) {
-      zone.userData.cloud.material.opacity = 0.1 + Math.sin(timeSec * 4) * 0.05;
+      zone.userData.cloud.material.opacity = 0.15 + Math.sin(timeSec * 4 + i) * 0.08;
     }
   });
   
